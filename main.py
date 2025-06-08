@@ -17,8 +17,7 @@ PIN = 14
 def receiver_up():
     print("CORNETTA ALZATA")
     global audio_process
-    audio_process = subprocess.run(["aplay", "message.wav"])
-    audio_process.wait()
+    audio_process = subprocess.Popen(["aplay", "message.wav"])
 
 def receiver_down():
     print("CORNETTA ABBASSATA")

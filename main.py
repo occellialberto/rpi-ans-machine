@@ -1,5 +1,6 @@
 import time
 import os
+from player import play_audio
 
 try:
     import RPi.GPIO as GPIO
@@ -38,10 +39,12 @@ def main():
         while True:
             current_state = read_gpio()
             if current_state != last_state:
-		if current_state == "HIGH":
-		    print("CORNETTA ALZATA")
-		else:
-		    print("CORNETTA ABBASSATA")
+                print(current_state)
+                if current_state == 0:
+                    print("CORNETTA ALZATA")
+                    play_audio("message.wav")
+                else:
+                    print("CORNETTA ABBASSATA")
                 state_str = "HIGH" if current_state else "LOW"
                 last_state = current_state
             time.sleep(0.05)  # Small delay to reduce CPU usage

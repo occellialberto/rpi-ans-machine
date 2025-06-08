@@ -1,3 +1,4 @@
+import logging
 import time
 import subprocess
 import threading
@@ -14,11 +15,20 @@ except RuntimeError:
     print("Warning: GPIO access might require root privileges.")
 
 # ---------------------------------------------------------------------------#
+# Logging setup                                                              #
+# ---------------------------------------------------------------------------#
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+)
+log = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------#
 # Configuration                                                              #
 # ---------------------------------------------------------------------------#
 PIN = 14                                   # GPIO pin to monitor (BCM scheme)
-MESSAGE_FILE = "message.wav"      # Audio message to be reproduced
-RECORD_DIR = Path("recordings")   # Directory where recordings land
+MESSAGE_FILE = "message.wav"               # Audio message to be reproduced
+RECORD_DIR = Path("recordings")            # Directory where recordings land
 # Use PulseAudio’s recorder. “--format=cd --file-format=wav” is the closest
 # equivalent to the old “arecord -q -f cd -t wav”.
 RECORD_CMD = [
@@ -27,7 +37,7 @@ RECORD_CMD = [
     "--channels=1",
     "--format=s16le",
     "--device=bluez_source.00_16_94_24_F3_F8.handsfree_head_unit",
-    "--file-format=wav"
+    "--file-format=wav",
 ]
 POLL_DELAY = 0.02                          # Seconds between GPIO polls
 # ---------------------------------------------------------------------------#
@@ -39,6 +49,7 @@ def setup_gpio() -> None:
     """
     GPIO.setmode(GPIO.BCM)
     GPIO.setup(PIN, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+    log.info("GPIO initialised (BCM pin %s).", PIN)
 
 
 def read_gpio() -> int:
@@ -58,9 +69,12 @@ def _play_message(blocking: bool = False) -> threading.Thread:
     If `blocking=True` the function itself will not return until the audio
     has been played, but the returned object is still a dummy Thread.
     """
+    log.info("Starting message playback (%s, blocking=%s).", MESSAGE_FILE, blocking)
     if blocking:
         play_audio(MESSAGE_FILE, blocking=True)
+        log.info("Message playback finished (blocking path).")
         return threading.current_thread()  # never queried
+
     thread = threading.Thread(
         target=play_audio,
         args=(MESSAGE_FILE,),
@@ -78,6 +92,7 @@ class Recorder:
     """
     Minimal wrapper around a recording subprocess (e.g. `parecord`).
     """
+
     def __init__(self) -> None:
         self.proc: Optional[subprocess.Popen[str]] = None
         self.file: Optional[Path] = None
@@ -87,16 +102,22 @@ class Recorder:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.file = RECORD_DIR / f"call_{timestamp}.wav"
         cmd = [*RECORD_CMD, str(self.file)]
+        log.info("Starting recording → %s", self.file)
         self.proc = subprocess.Popen(cmd, start_new_session=True)
 
     def stop(self) -> None:
         if self.proc and self.proc.poll() is None:
+            log.info("Stopping recording.")
             self.proc.terminate()
             try:
                 self.proc.wait(timeout=2)
             except subprocess.TimeoutExpired:
+                log.warning("Recorder did not terminate, killing.")
                 self.proc.kill()
+        if self.file:
+            log.info("Recording saved: %s", self.file)
         self.proc = None
+        self.file = None
 
 
 # ---------------------------------------------------------------------------#
@@ -132,6 +153,7 @@ def main() -> None:
 
             # ----------------------------- IDLE ----------------------------- #
             if state == "IDLE" and falling_edge:
+                log.info("Hang down detected (falling edge) → playing message.")
                 message_thread = _play_message(blocking=False)
                 state = "PLAY_MESSAGE"
 
@@ -139,15 +161,18 @@ def main() -> None:
             elif state == "PLAY_MESSAGE":
                 # Abort if pin goes high before message ends
                 if rising_edge:
+                    log.info("Hang up detected during playback → aborting.")
                     stop_audio()
                     state = "IDLE"
                 # Start recording once playback finishes
                 elif message_thread and not message_thread.is_alive():
+                    log.info("Message playback finished → starting recording.")
                     recorder.start()
                     state = "RECORDING"
 
             # -------------------------- RECORDING -------------------------- #
             elif state == "RECORDING" and rising_edge:
+                log.info("Hang up detected → stopping recording.")
                 recorder.stop()
                 state = "IDLE"
 
@@ -155,12 +180,13 @@ def main() -> None:
             time.sleep(POLL_DELAY)
 
     except KeyboardInterrupt:
-        print("\nExiting…")
+        log.info("Keyboard interrupt received – exiting.")
 
     finally:
         stop_audio()
         recorder.stop()
         GPIO.cleanup()
+        log.info("GPIO cleaned up. Bye!")
 
 
 if __name__ == "__main__":

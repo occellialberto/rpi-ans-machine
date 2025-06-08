@@ -9,18 +9,23 @@ but it will gracefully fall back to pure-python solutions if available.
 Public helpers
 --------------
 play_audio(path: str, *, blocking: bool = True) -> bool
-    Start playback of *path* through the default audio device.
+    Start playback of *path* through the
+     default audio device.
 
 stop_audio() -> bool
     Best-effort attempt to halt any currently playing audio that was started
     through this module (only effective for non-blocking playback).
 
+play(path: str, *, blocking: bool = True) -> threading.Thread
+    Convenience wrapper that starts a background thread running play_audio
+    and returns the Thread instance.
+
 Typical usage
 -------------
->>> from player import play_audio, stop_audio
->>> play_audio("/home/pi/sounds/beep.wav", blocking=False)  # fire-and-forget
+>>> from player import play, stop
+>>> th = play("/home/pi/sounds/beep.wav")  # fire-and-forget
 >>> # …later …
->>> stop_audio()   # stop it again
+>>> stop()        # stop it again
 
 Environment variables recognised
 --------------------------------
@@ -350,8 +355,55 @@ def play_audio(path: str | os.PathLike, *, blocking: bool = True) -> bool:
     return False
 
 
-# Allow shorter aliases
-play = play_audio
+# ---------------------------------------------------------------------------#
+# Threaded convenience wrapper                                               #
+# ---------------------------------------------------------------------------#
+class _PlayThread(threading.Thread):
+    """
+    Background thread that executes `play_audio`.  The boolean return value
+    is stored in `self.success` once playback has finished.
+    """
+
+    def __init__(self, path: str | os.PathLike, *, blocking: bool = True):
+        super().__init__(daemon=True)
+        self._path = path
+        self._blocking = blocking
+        self.success: Optional[bool] = None
+
+    def run(self) -> None:
+        try:
+            self.success = play_audio(self._path, blocking=self._blocking)
+        except Exception:
+            # Swallow exceptions so that the thread never terminates with error
+            self.success = False
+
+
+def play(path: str | os.PathLike, *, blocking: bool = True) -> _PlayThread:
+    """
+    Start audio playback in a dedicated daemon thread and return the thread.
+
+    The call itself is always non-blocking; if you need to wait for
+    completion call `thread.join()`.  The boolean result of `play_audio`
+    can be inspected afterwards via `thread.success`.
+
+    Parameters
+    ----------
+    path : str or PathLike
+        File to play.
+    blocking : bool, default True
+        Forwarded to `play_audio` inside the thread.
+
+    Returns
+    -------
+    _PlayThread
+        Thread instance running the playback.
+    """
+    thread = _PlayThread(path, blocking=blocking)
+    thread.start()
+    return thread
+
+
+# Keep stop() convenience alias
 stop = stop_audio
 
 
@@ -359,13 +411,13 @@ stop = stop_audio
 # Manual test harness                                                         #
 # ---------------------------------------------------------------------------#
 if __name__ == "__main__":
-    # Requirement: simply play “message.wav” and demonstrate stop after 2 s
+    # Requirement: simply play “message.wav” in the background and
+    # demonstrate stop after 2 s.
     import time
 
-    success = play("message.wav", blocking=False)
-    if not success:
-        sys.exit(1)
-
+    th = play("message.wav", blocking=True)  # runs in its own thread
     time.sleep(2)
     stop_audio()
-    sys.exit(0)
+    # Wait briefly for the thread to finish up
+    th.join(timeout=1)
+    sys.exit(0 if (th.success is None or th.success) else 1)

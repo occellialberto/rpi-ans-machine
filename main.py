@@ -46,7 +46,6 @@ def main():
                 else:
                     print("CORNETTA ABBASSATA")
                     stop_audio()
-
                 state_str = "HIGH" if current_state else "LOW"
                 last_state = current_state
             time.sleep(0.05)  # Small delay to reduce CPU usage

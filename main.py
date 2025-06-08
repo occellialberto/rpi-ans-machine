@@ -17,8 +17,8 @@ except RuntimeError:
 # Configuration                                                              #
 # ---------------------------------------------------------------------------#
 PIN = 14                                   # GPIO pin to monitor (BCM scheme)
-MESSAGE_FILE = "/home/pi/message.wav"      # Audio message to be reproduced
-RECORD_DIR = Path("/home/pi/recordings")   # Directory where recordings land
+MESSAGE_FILE = "message.wav"      # Audio message to be reproduced
+RECORD_DIR = Path("recordings")   # Directory where recordings land
 RECORD_CMD = ["arecord", "-q", "-f", "cd", "-t", "wav"]  # Recording backend
 POLL_DELAY = 0.02                          # Seconds between GPIO polls
 # ---------------------------------------------------------------------------#

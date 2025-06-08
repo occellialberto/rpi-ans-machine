@@ -1,0 +1,50 @@
+import time
+
+try:
+    import RPi.GPIO as GPIO
+except RuntimeError:
+    # On some systems running without root will raise a RuntimeError.
+    # The script will still import but GPIO calls will fail.
+    # You may want to handle permissions separately.
+    print("Warning: GPIO access might require root privileges.")
+
+# GPIO pin that we want to read (BCM numbering)
+PIN = 14
+
+def setup_gpio():
+    """
+    Prepare the Raspberry Pi GPIO for input on the specified pin.
+    """
+    GPIO.setmode(GPIO.BCM)          # Use Broadcom pin numbering
+    GPIO.setup(PIN, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)  # Activate internal pull-down resistor
+
+def read_gpio(pin: int = PIN) -> int:
+    """
+    Return the current digital state of the given GPIO pin.
+    0 -> LOW, 1 -> HIGH
+    """
+    return GPIO.input(pin)
+
+def main():
+    """
+    Continuously monitor GPIO 14 and report state changes.
+    Press Ctrl-C to exit cleanly.
+    """
+    setup_gpio()
+    last_state = read_gpio()  # Initialize with the current state
+
+    try:
+        while True:
+            current_state = read_gpio()
+            if current_state != last_state:
+                state_str = "HIGH" if current_state else "LOW"
+                print(f"GPIO {PIN} changed to {state_str}")
+                last_state = current_state
+            time.sleep(0.05)  # Small delay to reduce CPU usage
+    except KeyboardInterrupt:
+        print("\nExiting…")
+    finally:
+        GPIO.cleanup()        # Always clean up to release GPIO resources
+
+if __name__ == "__main__":
+    main()

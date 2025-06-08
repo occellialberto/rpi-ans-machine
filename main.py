@@ -1,68 +1,158 @@
 import time
 import subprocess
+import threading
+from datetime import datetime
+from pathlib import Path
+from typing import Optional
+
 from player import play_audio, stop_audio
 
 try:
     import RPi.GPIO as GPIO
 except RuntimeError:
-    # On some systems running without root will raise a RuntimeError.
-    # The script will still import but GPIO calls will fail.
-    # You may want to handle permissions separately.
+    # Running without root may raise a RuntimeError – GPIO calls will then fail.
     print("Warning: GPIO access might require root privileges.")
 
-# GPIO pin that we want to read (BCM numbering)
-PIN = 14
+# ---------------------------------------------------------------------------#
+# Configuration                                                              #
+# ---------------------------------------------------------------------------#
+PIN = 14                                   # GPIO pin to monitor (BCM scheme)
+MESSAGE_FILE = "/home/pi/message.wav"      # Audio message to be reproduced
+RECORD_DIR = Path("/home/pi/recordings")   # Directory where recordings land
+RECORD_CMD = ["arecord", "-q", "-f", "cd", "-t", "wav"]  # Recording backend
+POLL_DELAY = 0.02                          # Seconds between GPIO polls
+# ---------------------------------------------------------------------------#
 
 
-def receiver_up():
-    print("CORNETTA ALZATA")
-    global audio_process
-    audio_process = subprocess.Popen(["aplay", "message.wav"])
-
-def receiver_down():
-    print("CORNETTA ABBASSATA")
-    global audio_process
-    audio_process.terminate()
-
-def setup_gpio():
+def setup_gpio() -> None:
     """
-    Prepare the Raspberry Pi GPIO for input on the specified pin.
+    Prepare the GPIO subsystem.
     """
-    GPIO.setmode(GPIO.BCM)          # Use Broadcom pin numbering
-    GPIO.setup(PIN, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)  # Activate internal pull-down resistor
+    GPIO.setmode(GPIO.BCM)
+    GPIO.setup(PIN, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 
-def read_gpio(pin: int = PIN) -> int:
-    """
-    Return the current digital state of the given GPIO pin.
-    0 -> LOW, 1 -> HIGH
-    """
-    return GPIO.input(pin)
 
-def main():
+def read_gpio() -> int:
     """
-    Continuously monitor GPIO 14 and report state changes.
-    Press Ctrl-C to exit cleanly.
+    Read the monitored pin.
+    Returns 0 (LOW) or 1 (HIGH).
+    """
+    return GPIO.input(PIN)
+
+
+# ---------------------------------------------------------------------------#
+# Playback helper                                                            #
+# ---------------------------------------------------------------------------#
+def _play_message(blocking: bool = False) -> threading.Thread:
+    """
+    Play MESSAGE_FILE and return a Thread that finishes when playback ends.
+    If `blocking=True` the function itself will not return until the audio
+    has been played, but the returned object is still a dummy Thread.
+    """
+    if blocking:
+        play_audio(MESSAGE_FILE, blocking=True)
+        return threading.current_thread()  # never queried
+    thread = threading.Thread(
+        target=play_audio,
+        args=(MESSAGE_FILE,),
+        kwargs={"blocking": True},  # inside thread: blocking; outside: non-blocking
+        daemon=True,
+    )
+    thread.start()
+    return thread
+
+
+# ---------------------------------------------------------------------------#
+# Recording helper                                                           #
+# ---------------------------------------------------------------------------#
+class Recorder:
+    """
+    Minimal wrapper around a recording subprocess (e.g. `arecord`).
+    """
+    def __init__(self) -> None:
+        self.proc: Optional[subprocess.Popen[str]] = None
+        self.file: Optional[Path] = None
+
+    def start(self) -> None:
+        RECORD_DIR.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.file = RECORD_DIR / f"call_{timestamp}.wav"
+        cmd = [*RECORD_CMD, str(self.file)]
+        self.proc = subprocess.Popen(cmd, start_new_session=True)
+
+    def stop(self) -> None:
+        if self.proc and self.proc.poll() is None:
+            self.proc.terminate()
+            try:
+                self.proc.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                self.proc.kill()
+        self.proc = None
+
+
+# ---------------------------------------------------------------------------#
+# Main loop                                                                  #
+# ---------------------------------------------------------------------------#
+def main() -> None:
+    """
+    Implements the following state machine:
+
+    • IDLE:
+        waiting for GPIO to go from HIGH (1) to LOW (0).
+    • PLAY_MESSAGE:
+        reproducing MESSAGE_FILE. If GPIO returns HIGH before
+        playback completes → abort and return to IDLE.
+        When playback finishes while GPIO is still LOW → start recording.
+    • RECORDING:
+        capturing audio whilst GPIO stays LOW.
+        When GPIO returns HIGH → stop recording and return to IDLE.
     """
     setup_gpio()
-    last_state = read_gpio()  # Initialize with the current state
+    last_level = read_gpio()
+    state = "IDLE"
+
+    message_thread: Optional[threading.Thread] = None
+    recorder = Recorder()
 
     try:
         while True:
-            current_state = read_gpio()
-            if current_state != last_state:
-                print(current_state)
-                if current_state == 0:
-                    receiver_up()
-                else:
-                    # Immediately interrupt any ongoing playback when the handset is placed down
-                    receiver_down()
-                state_str = "HIGH" if current_state else "LOW"
-                last_state = current_state
-            time.sleep(0.05)  # Small delay to reduce CPU usage
+            level = read_gpio()
+
+            falling_edge = last_level == 1 and level == 0
+            rising_edge = last_level == 0 and level == 1
+
+            # ----------------------------- IDLE ----------------------------- #
+            if state == "IDLE" and falling_edge:
+                message_thread = _play_message(blocking=False)
+                state = "PLAY_MESSAGE"
+
+            # ------------------------ PLAY_MESSAGE ------------------------- #
+            elif state == "PLAY_MESSAGE":
+                # Abort if pin goes high before message ends
+                if rising_edge:
+                    stop_audio()
+                    state = "IDLE"
+                # Start recording once playback finishes
+                elif message_thread and not message_thread.is_alive():
+                    recorder.start()
+                    state = "RECORDING"
+
+            # -------------------------- RECORDING -------------------------- #
+            elif state == "RECORDING" and rising_edge:
+                recorder.stop()
+                state = "IDLE"
+
+            last_level = level
+            time.sleep(POLL_DELAY)
+
     except KeyboardInterrupt:
         print("\nExiting…")
+
     finally:
-        GPIO.cleanup()        # Always clean up to release GPIO resources
+        stop_audio()
+        recorder.stop()
+        GPIO.cleanup()
+
 
 if __name__ == "__main__":
     main()

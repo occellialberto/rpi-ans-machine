@@ -21,7 +21,14 @@ MESSAGE_FILE = "message.wav"      # Audio message to be reproduced
 RECORD_DIR = Path("recordings")   # Directory where recordings land
 # Use PulseAudio’s recorder. “--format=cd --file-format=wav” is the closest
 # equivalent to the old “arecord -q -f cd -t wav”.
-RECORD_CMD = ["parecord", "--format=cd", "--file-format=wav"]  # Recording backend
+RECORD_CMD = [
+    "parecord",
+    "--rate=16000",
+    "--channels=1",
+    "--format=s16le",
+    "--device=bluez_source.00_16_94_24_F3_F8.handsfree_head_unit",
+    "--file-format=wav"
+]
 POLL_DELAY = 0.02                          # Seconds between GPIO polls
 # ---------------------------------------------------------------------------#
 

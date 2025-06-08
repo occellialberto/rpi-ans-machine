@@ -137,6 +137,7 @@ def main() -> None:
         capturing audio whilst GPIO stays LOW.
         When GPIO returns HIGH → stop recording and return to IDLE.
     """
+    subprocess.run(["paplay", "o95.wav"])
     setup_gpio()
     last_level = read_gpio()
     state = "IDLE"

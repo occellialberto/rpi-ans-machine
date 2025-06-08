@@ -19,7 +19,9 @@ except RuntimeError:
 PIN = 14                                   # GPIO pin to monitor (BCM scheme)
 MESSAGE_FILE = "message.wav"      # Audio message to be reproduced
 RECORD_DIR = Path("recordings")   # Directory where recordings land
-RECORD_CMD = ["arecord", "-q", "-f", "cd", "-t", "wav"]  # Recording backend
+# Use PulseAudio’s recorder. “--format=cd --file-format=wav” is the closest
+# equivalent to the old “arecord -q -f cd -t wav”.
+RECORD_CMD = ["parecord", "--format=cd", "--file-format=wav"]  # Recording backend
 POLL_DELAY = 0.02                          # Seconds between GPIO polls
 # ---------------------------------------------------------------------------#
 
@@ -67,7 +69,7 @@ def _play_message(blocking: bool = False) -> threading.Thread:
 # ---------------------------------------------------------------------------#
 class Recorder:
     """
-    Minimal wrapper around a recording subprocess (e.g. `arecord`).
+    Minimal wrapper around a recording subprocess (e.g. `parecord`).
     """
     def __init__(self) -> None:
         self.proc: Optional[subprocess.Popen[str]] = None

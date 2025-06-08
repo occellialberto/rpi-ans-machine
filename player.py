@@ -270,14 +270,6 @@ play = play_audio
 # Manual test harness                                                         #
 # ---------------------------------------------------------------------------#
 if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser(description="Play an audio file.")
-    parser.add_argument("file", help="Audio file to play")
-    parser.add_argument("-n", "--non-blocking", action="store_true",
-                        help="Return immediately (non-blocking mode)")
-    args = parser.parse_args()
-
-    success = play_audio(args.file, blocking=not args.non_blocking)
+    # Requirement: simply play “message.wav”
+    success = play("message.wav")
     sys.exit(0 if success else 1)
-

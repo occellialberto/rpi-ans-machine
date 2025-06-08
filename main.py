@@ -1,5 +1,5 @@
 import time
-import os
+import subprocess
 from player import play_audio, stop_audio
 
 try:
@@ -12,6 +12,16 @@ except RuntimeError:
 
 # GPIO pin that we want to read (BCM numbering)
 PIN = 14
+
+
+def receiver_up():
+    global audio_process
+    audio_process = subprocess.run(["aplay", "message.wav"])
+    audio_process.wait()
+
+def receiver_down():
+    global audio_process
+    audio_process.terminate()
 
 def setup_gpio():
     """
@@ -44,8 +54,9 @@ def main():
                     print("CORNETTA ALZATA")
                     play_audio("message.wav")
                 else:
+                    # Immediately interrupt any ongoing playback when the handset is placed down
+                    stop_audio()                       # cut the message short
                     print("CORNETTA ABBASSATA")
-                    stop_audio()
                 state_str = "HIGH" if current_state else "LOW"
                 last_state = current_state
             time.sleep(0.05)  # Small delay to reduce CPU usage

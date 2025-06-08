@@ -9,22 +9,21 @@ but it will gracefully fall back to pure-python solutions if available.
 Public helpers
 --------------
 play_audio(path: str, *, blocking: bool = True) -> bool
-    Start playback of *path* through the
-     default audio device.
+    Start playback of *path* through the default audio device.
 
 stop_audio() -> bool
-    Best-effort attempt to halt any currently playing audio that was started
-    through this module (only effective for non-blocking playback).
+    Best-effort attempt to halt any currently playing audio **and** ensure
+    that any background `_PlayThread` spawned via `play()` terminates.
 
 play(path: str, *, blocking: bool = True) -> threading.Thread
-    Convenience wrapper that starts a background thread running play_audio
-    and returns the Thread instance.
+    Convenience wrapper that starts a background thread running
+    `play_audio` and returns the Thread instance.
 
 Typical usage
 -------------
 >>> from player import play, stop
 >>> th = play("/home/pi/sounds/beep.wav")  # fire-and-forget
->>> # …later …
+>>> # …later…
 >>> stop()        # stop it again
 
 Environment variables recognised
@@ -54,6 +53,9 @@ _PLAYBACK_LOCK = threading.Lock()
 def _register_playback(backend: str, handle: Any) -> None:
     """
     Remember a playback handle so that `stop_audio()` can later terminate it.
+    Handles are now registered *regardless* of the `blocking` flag so that
+    even “blocking” playbacks running in a separate `_PlayThread` can be
+    interrupted from the outside.
     """
     with _PLAYBACK_LOCK:
         _PLAYBACK_HANDLES.append((backend, handle))
@@ -78,7 +80,10 @@ def _is_handle_active(backend: str, handle: Any) -> bool:
 
 def stop_audio() -> bool:
     """
-    Attempt to stop any audio that is still playing.
+    Attempt to stop any audio that is still playing.  This additionally
+    causes blocking playbacks that are running inside a background
+    `_PlayThread` to return early, so the corresponding thread terminates
+    quickly after `stop_audio()` is invoked.
 
     Returns
     -------
@@ -135,7 +140,7 @@ def _is_raspberry_pi() -> bool:
 
 
 # ---------------------------------------------------------------------------#
-# Back-end #1 – omxplayer (preferred on Raspberry Pi, supports many formats)  #
+# Back-end #1 – omxplayer (preferred on Raspberry Pi, supports many formats) #
 # ---------------------------------------------------------------------------#
 def _play_with_omxplayer(file_path: str, blocking: bool) -> bool:
     """
@@ -149,21 +154,19 @@ def _play_with_omxplayer(file_path: str, blocking: bool) -> bool:
     cmd = ["omxplayer", "-o", audio_out, file_path]
 
     try:
+        proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL,
+                                start_new_session=True)
+        _register_playback("omxplayer", proc)
         if blocking:
-            subprocess.run(cmd, stdout=subprocess.DEVNULL,
-                           stderr=subprocess.DEVNULL, check=True)
-        else:
-            proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL,
-                                    stderr=subprocess.DEVNULL,
-                                    start_new_session=True)
-            _register_playback("omxplayer", proc)
+            proc.wait()
         return True
     except Exception:
         return False
 
 
 # ---------------------------------------------------------------------------#
-# Back-end #2 – aplay (ALSA, wav & raw files)                                 #
+# Back-end #2 – aplay (ALSA, wav & raw files)                                #
 # ---------------------------------------------------------------------------#
 def _play_with_aplay(file_path: str, blocking: bool) -> bool:
     """
@@ -175,21 +178,19 @@ def _play_with_aplay(file_path: str, blocking: bool) -> bool:
 
     cmd = ["aplay", "-q", file_path]  # -q = quiet
     try:
+        proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL,
+                                start_new_session=True)
+        _register_playback("aplay", proc)
         if blocking:
-            subprocess.run(cmd, stdout=subprocess.DEVNULL,
-                           stderr=subprocess.DEVNULL, check=True)
-        else:
-            proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL,
-                                    stderr=subprocess.DEVNULL,
-                                    start_new_session=True)
-            _register_playback("aplay", proc)
+            proc.wait()
         return True
     except Exception:
         return False
 
 
 # ---------------------------------------------------------------------------#
-# Back-end #3 – simpleaudio (pure python, wav-only, cross-platform)           #
+# Back-end #3 – simpleaudio (pure python, wav-only, cross-platform)          #
 # ---------------------------------------------------------------------------#
 def _play_with_simpleaudio(file_path: str, blocking: bool) -> bool:
     try:
@@ -200,17 +201,16 @@ def _play_with_simpleaudio(file_path: str, blocking: bool) -> bool:
     try:
         wave_obj = simpleaudio.WaveObject.from_wave_file(file_path)
         play_obj = wave_obj.play()
+        _register_playback("simpleaudio", play_obj)
         if blocking:
             play_obj.wait_done()
-        else:
-            _register_playback("simpleaudio", play_obj)
         return True
     except Exception:
         return False
 
 
 # ---------------------------------------------------------------------------#
-# Back-end #4 – pygame (commonly available on Pi OS)                          #
+# Back-end #4 – pygame (commonly available on Pi OS)                         #
 # ---------------------------------------------------------------------------#
 def _play_with_pygame(file_path: str, blocking: bool) -> bool:
     try:
@@ -223,18 +223,17 @@ def _play_with_pygame(file_path: str, blocking: bool) -> bool:
             pygame.mixer.init()
         sound = pygame.mixer.Sound(file_path)
         channel = sound.play()
+        _register_playback("pygame", channel)
         if blocking:
             while channel.get_busy():
                 pygame.time.wait(50)
-        else:
-            _register_playback("pygame", channel)
         return True
     except Exception:
         return False
 
 
 # ---------------------------------------------------------------------------#
-# Back-end #5 – playsound (small external dependency, always blocking)        #
+# Back-end #5 – playsound (small external dependency, always blocking)       #
 # ---------------------------------------------------------------------------#
 def _play_with_playsound(file_path: str, blocking: bool) -> bool:
     try:
@@ -256,7 +255,7 @@ def _play_with_playsound(file_path: str, blocking: bool) -> bool:
 
 
 # ---------------------------------------------------------------------------#
-# Generic “system command” fallback (works on many platforms)                 #
+# Generic “system command” fallback (works on many platforms)                #
 # ---------------------------------------------------------------------------#
 _OTHER_CMDS = {
     "darwin": ["afplay"],
@@ -293,14 +292,12 @@ def _play_with_system_command(file_path: str, blocking: bool) -> bool:
             continue
 
         try:
+            proc = subprocess.Popen(full_cmd, stdout=subprocess.DEVNULL,
+                                    stderr=subprocess.DEVNULL,
+                                    start_new_session=True)
+            _register_playback("system", proc)
             if blocking:
-                subprocess.run(full_cmd, stdout=subprocess.DEVNULL,
-                               stderr=subprocess.DEVNULL, check=True)
-            else:
-                proc = subprocess.Popen(full_cmd, stdout=subprocess.DEVNULL,
-                                        stderr=subprocess.DEVNULL,
-                                        start_new_session=True)
-                _register_playback("system", proc)
+                proc.wait()
             return True
         except Exception:
             continue
@@ -308,7 +305,7 @@ def _play_with_system_command(file_path: str, blocking: bool) -> bool:
 
 
 # ---------------------------------------------------------------------------#
-# Master helper                                                               #
+# Master helper                                                              #
 # ---------------------------------------------------------------------------#
 def play_audio(path: str | os.PathLike, *, blocking: bool = True) -> bool:
     """

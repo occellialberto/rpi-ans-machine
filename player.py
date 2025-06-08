@@ -6,17 +6,21 @@ The implementation tries several different playback back-ends, choosing
 those that are most likely to be present on a Pi first (omxplayer, aplay),
 but it will gracefully fall back to pure-python solutions if available.
 
-Public function
----------------
+Public helpers
+--------------
 play_audio(path: str, *, blocking: bool = True) -> bool
-    Play *path* through the default audio device.  The function returns
-    True when playback could be started, False otherwise.
+    Start playback of *path* through the default audio device.
+
+stop_audio() -> bool
+    Best-effort attempt to halt any currently playing audio that was started
+    through this module (only effective for non-blocking playback).
 
 Typical usage
 -------------
->>> from player import play_audio
->>> play_audio("/home/pi/sounds/beep.wav")            # wait until finished
->>> play_audio("/home/pi/sounds/alert.mp3", blocking=False)
+>>> from player import play_audio, stop_audio
+>>> play_audio("/home/pi/sounds/beep.wav", blocking=False)  # fire-and-forget
+>>> # …later …
+>>> stop_audio()   # stop it again
 
 Environment variables recognised
 --------------------------------
@@ -32,7 +36,81 @@ import shutil
 import threading
 import subprocess
 from pathlib import Path
-from typing import Optional, Callable
+from typing import Optional, Callable, Any, List, Tuple
+
+
+# ---------------------------------------------------------------------------#
+# Internals – keep track of non-blocking playbacks so we can stop them later #
+# ---------------------------------------------------------------------------#
+_PLAYBACK_HANDLES: List[Tuple[str, Any]] = []   # (backend identifier, handle)
+_PLAYBACK_LOCK = threading.Lock()
+
+
+def _register_playback(backend: str, handle: Any) -> None:
+    """
+    Remember a playback handle so that `stop_audio()` can later terminate it.
+    """
+    with _PLAYBACK_LOCK:
+        _PLAYBACK_HANDLES.append((backend, handle))
+
+
+def _is_handle_active(backend: str, handle: Any) -> bool:
+    """
+    Helper that returns True if the supplied handle is believed to be
+    currently playing.
+    """
+    try:
+        if backend in {"omxplayer", "aplay", "system"}:
+            return handle.poll() is None
+        if backend == "simpleaudio":
+            return handle.is_playing()
+        if backend == "pygame":
+            return handle.get_busy()
+    except Exception:
+        return False
+    return False
+
+
+def stop_audio() -> bool:
+    """
+    Attempt to stop any audio that is still playing.
+
+    Returns
+    -------
+    bool
+        True if at least one playback was stopped, False otherwise.
+    """
+    stopped_any = False
+    with _PLAYBACK_LOCK:
+        # Work on a copy so we can modify the original list while iterating
+        for backend, handle in _PLAYBACK_HANDLES[:]:
+            try:
+                if not _is_handle_active(backend, handle):
+                    _PLAYBACK_HANDLES.remove((backend, handle))
+                    continue
+
+                if backend in {"omxplayer", "aplay", "system"}:
+                    handle.terminate()
+                    handle.wait(timeout=1)
+                elif backend == "simpleaudio":
+                    handle.stop()
+                elif backend == "pygame":
+                    handle.stop()
+                # playsound threads cannot be stopped cleanly – ignore
+                else:
+                    continue
+                stopped_any = True
+            except Exception:
+                # Ignore individual failures but keep processing others
+                pass
+            finally:
+                # Drop handle if it no longer plays
+                if not _is_handle_active(backend, handle):
+                    try:
+                        _PLAYBACK_HANDLES.remove((backend, handle))
+                    except ValueError:
+                        pass
+    return stopped_any
 
 
 # ---------------------------------------------------------------------------#
@@ -70,8 +148,10 @@ def _play_with_omxplayer(file_path: str, blocking: bool) -> bool:
             subprocess.run(cmd, stdout=subprocess.DEVNULL,
                            stderr=subprocess.DEVNULL, check=True)
         else:
-            subprocess.Popen(cmd, stdout=subprocess.DEVNULL,
-                             stderr=subprocess.DEVNULL, start_new_session=True)
+            proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL,
+                                    stderr=subprocess.DEVNULL,
+                                    start_new_session=True)
+            _register_playback("omxplayer", proc)
         return True
     except Exception:
         return False
@@ -94,8 +174,10 @@ def _play_with_aplay(file_path: str, blocking: bool) -> bool:
             subprocess.run(cmd, stdout=subprocess.DEVNULL,
                            stderr=subprocess.DEVNULL, check=True)
         else:
-            subprocess.Popen(cmd, stdout=subprocess.DEVNULL,
-                             stderr=subprocess.DEVNULL, start_new_session=True)
+            proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL,
+                                    stderr=subprocess.DEVNULL,
+                                    start_new_session=True)
+            _register_playback("aplay", proc)
         return True
     except Exception:
         return False
@@ -115,6 +197,8 @@ def _play_with_simpleaudio(file_path: str, blocking: bool) -> bool:
         play_obj = wave_obj.play()
         if blocking:
             play_obj.wait_done()
+        else:
+            _register_playback("simpleaudio", play_obj)
         return True
     except Exception:
         return False
@@ -137,6 +221,8 @@ def _play_with_pygame(file_path: str, blocking: bool) -> bool:
         if blocking:
             while channel.get_busy():
                 pygame.time.wait(50)
+        else:
+            _register_playback("pygame", channel)
         return True
     except Exception:
         return False
@@ -158,6 +244,7 @@ def _play_with_playsound(file_path: str, blocking: bool) -> bool:
         else:
             threading.Thread(target=playsound,
                              args=(file_path,), daemon=True).start()
+            # playsound offers no stop mechanism, so we cannot register it
         return True
     except Exception:
         return False
@@ -174,7 +261,7 @@ _OTHER_CMDS = {
 }
 
 
-def _build_system_command(cmd: str, file_path: str) -> Optional[list[str]]:
+def _build_system_command(cmd: str, file_path: str) -> Optional[List[str]]:
     """
     Build the concrete subprocess command for a given base command name.
     Handles special cases such as PowerShell on Windows and ffplay options.
@@ -205,9 +292,10 @@ def _play_with_system_command(file_path: str, blocking: bool) -> bool:
                 subprocess.run(full_cmd, stdout=subprocess.DEVNULL,
                                stderr=subprocess.DEVNULL, check=True)
             else:
-                subprocess.Popen(full_cmd, stdout=subprocess.DEVNULL,
-                                 stderr=subprocess.DEVNULL,
-                                 start_new_session=True)
+                proc = subprocess.Popen(full_cmd, stdout=subprocess.DEVNULL,
+                                        stderr=subprocess.DEVNULL,
+                                        start_new_session=True)
+                _register_playback("system", proc)
             return True
         except Exception:
             continue
@@ -242,7 +330,7 @@ def play_audio(path: str | os.PathLike, *, blocking: bool = True) -> bool:
         raise FileNotFoundError(f"No such audio file: {file_path}")
 
     # Strategy order: Pi-preferred → pure python → generic
-    strategies: list[Callable[[str, bool], bool]] = []
+    strategies: List[Callable[[str, bool], bool]] = []
 
     if _is_raspberry_pi():
         strategies.extend([
@@ -262,14 +350,22 @@ def play_audio(path: str | os.PathLike, *, blocking: bool = True) -> bool:
     return False
 
 
-# Allow shorter alias
+# Allow shorter aliases
 play = play_audio
+stop = stop_audio
 
 
 # ---------------------------------------------------------------------------#
 # Manual test harness                                                         #
 # ---------------------------------------------------------------------------#
 if __name__ == "__main__":
-    # Requirement: simply play “message.wav”
-    success = play("message.wav")
-    sys.exit(0 if success else 1)
+    # Requirement: simply play “message.wav” and demonstrate stop after 2 s
+    import time
+
+    success = play("message.wav", blocking=False)
+    if not success:
+        sys.exit(1)
+
+    time.sleep(2)
+    stop_audio()
+    sys.exit(0)

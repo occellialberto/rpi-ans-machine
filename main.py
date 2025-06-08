@@ -15,11 +15,13 @@ PIN = 14
 
 
 def receiver_up():
+    print("CORNETTA ALZATA")
     global audio_process
     audio_process = subprocess.run(["aplay", "message.wav"])
     audio_process.wait()
 
 def receiver_down():
+    print("CORNETTA ABBASSATA")
     global audio_process
     audio_process.terminate()
 
@@ -51,12 +53,10 @@ def main():
             if current_state != last_state:
                 print(current_state)
                 if current_state == 0:
-                    print("CORNETTA ALZATA")
-                    play_audio("message.wav")
+                    receiver_up()
                 else:
                     # Immediately interrupt any ongoing playback when the handset is placed down
-                    stop_audio()                       # cut the message short
-                    print("CORNETTA ABBASSATA")
+                    receiver_down()
                 state_str = "HIGH" if current_state else "LOW"
                 last_state = current_state
             time.sleep(0.05)  # Small delay to reduce CPU usage

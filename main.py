@@ -1,3 +1,9 @@
+# @file main.py
+# @author Alberto Occelli
+# @version 1.0
+# @date 09/06/2025
+# @brief This script is designed to monitor a GPIO pin, play an audio message, and record audio based on the state of the pin.
+
 import logging
 import time
 import subprocess
@@ -8,11 +14,7 @@ from typing import Optional
 
 from player import play_audio, stop_audio
 
-try:
-    import RPi.GPIO as GPIO
-except RuntimeError:
-    # Running without root may raise a RuntimeError – GPIO calls will then fail.
-    print("Warning: GPIO access might require root privileges.")
+import RPi.GPIO as GPIO
 
 # ---------------------------------------------------------------------------#
 # Logging setup                                                              #
@@ -42,33 +44,26 @@ RECORD_CMD = [
 POLL_DELAY = 0.02                          # Seconds between GPIO polls
 # ---------------------------------------------------------------------------#
 
-
+## @brief Prepare the GPIO subsystem.
 def setup_gpio() -> None:
-    """
-    Prepare the GPIO subsystem.
-    """
     GPIO.setmode(GPIO.BCM)
     GPIO.setup(PIN, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
     log.info("GPIO initialised (BCM pin %s).", PIN)
 
-
+## @brief Read the monitored pin.
+#  @return 0 (LOW) or 1 (HIGH).
 def read_gpio() -> int:
-    """
-    Read the monitored pin.
-    Returns 0 (LOW) or 1 (HIGH).
-    """
     return GPIO.input(PIN)
-
 
 # ---------------------------------------------------------------------------#
 # Playback helper                                                            #
 # ---------------------------------------------------------------------------#
+
+## @brief Play MESSAGE_FILE and return a Thread that finishes when playback ends.
+#  @param blocking If `blocking=True` the function itself will not return until the audio
+#  has been played, but the returned object is still a dummy Thread.
+#  @return thread
 def _play_message(blocking: bool = False) -> threading.Thread:
-    """
-    Play MESSAGE_FILE and return a Thread that finishes when playback ends.
-    If `blocking=True` the function itself will not return until the audio
-    has been played, but the returned object is still a dummy Thread.
-    """
     log.info("Starting message playback (%s, blocking=%s).", MESSAGE_FILE, blocking)
     if blocking:
         play_audio(MESSAGE_FILE, blocking=True)
@@ -84,19 +79,18 @@ def _play_message(blocking: bool = False) -> threading.Thread:
     thread.start()
     return thread
 
-
 # ---------------------------------------------------------------------------#
 # Recording helper                                                           #
 # ---------------------------------------------------------------------------#
-class Recorder:
-    """
-    Minimal wrapper around a recording subprocess (e.g. `parecord`).
-    """
 
+## @brief Minimal wrapper around a recording subprocess (e.g. `parecord`).
+class Recorder:
     def __init__(self) -> None:
         self.proc: Optional[subprocess.Popen[str]] = None
         self.file: Optional[Path] = None
+        self.start_time: Optional[float] = None
 
+    ## @brief Start recording.
     def start(self) -> None:
         RECORD_DIR.mkdir(parents=True, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -104,9 +98,11 @@ class Recorder:
         cmd = [*RECORD_CMD, str(self.file)]
         log.info("Starting recording → %s", self.file)
         self.proc = subprocess.Popen(cmd, start_new_session=True)
+        self.start_time = time.time()
 
+    ## @brief Stop recording.
     def stop(self) -> None:
-        if self.proc and self.proc.poll() is None:
+        if self.proc and self.proc.poll() is None and (time.time() - self.start_time) > 1:
             log.info("Stopping recording.")
             self.proc.terminate()
             try:
@@ -114,29 +110,24 @@ class Recorder:
             except subprocess.TimeoutExpired:
                 log.warning("Recorder did not terminate, killing.")
                 self.proc.kill()
-        if self.file:
-            log.info("Recording saved: %s", self.file)
+            if self.file:
+                log.info("Recording saved: %s", self.file)
         self.proc = None
         self.file = None
-
+        self.start_time = None
 
 # ---------------------------------------------------------------------------#
 # Main loop                                                                  #
 # ---------------------------------------------------------------------------#
-def main() -> None:
-    """
-    Implements the following state machine:
 
-    • IDLE:
-        waiting for GPIO to go from HIGH (1) to LOW (0).
-    • PLAY_MESSAGE:
-        reproducing MESSAGE_FILE. If GPIO returns HIGH before
-        playback completes → abort and return to IDLE.
-        When playback finishes while GPIO is still LOW → start recording.
-    • RECORDING:
-        capturing audio whilst GPIO stays LOW.
-        When GPIO returns HIGH → stop recording and return to IDLE.
-    """
+## @brief Implements the following state machine:
+#  • IDLE: waiting for GPIO to go from HIGH (1) to LOW (0).
+#  • PLAY_MESSAGE: reproducing MESSAGE_FILE. If GPIO returns HIGH before
+#  playback completes → abort and return to IDLE.
+#  When playback finishes while GPIO is still LOW → start recording.
+#  • RECORDING: capturing audio whilst GPIO stays LOW.
+#  When GPIO returns HIGH → stop recording and return to IDLE.
+def main() -> None:
     subprocess.run(["paplay", "o95.wav"])
     setup_gpio()
     last_level = read_gpio()
@@ -173,7 +164,7 @@ def main() -> None:
 
             # -------------------------- RECORDING -------------------------- #
             elif state == "RECORDING" and rising_edge:
-                log.info("Hang up detected → stopping recording.")
+                log.info("Hang down detected.")
                 recorder.stop()
                 state = "IDLE"
 

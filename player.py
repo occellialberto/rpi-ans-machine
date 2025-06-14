@@ -162,7 +162,7 @@ stop = stop_audio
 if __name__ == "__main__":
     import time
 
-    th = play("message.wav", blocking=True)  # runs in its own thread
+    th = play("message_edited.wav", blocking=True)  # runs in its own thread
     time.sleep(2)
     stop_audio()
     # Wait briefly for the thread to finish up

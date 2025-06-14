@@ -33,12 +33,13 @@ MESSAGE_FILE = "message.wav"               # Audio message to be reproduced
 RECORD_DIR = Path("recordings")            # Directory where recordings land
 # Use PulseAudio’s recorder. “--format=cd --file-format=wav” is the closest
 # equivalent to the old “arecord -q -f cd -t wav”.
+device = "--device=alsa_input.usb-C-Media_Electronics_Inc._USB_Audio_Device-00.mono-fallback"
 RECORD_CMD = [
     "parecord",
     "--rate=16000",
     "--channels=1",
     "--format=s16le",
-    "--device=bluez_source.00_16_94_24_F3_F8.handsfree_head_unit",
+    device,
     "--file-format=wav",
 ]
 POLL_DELAY = 0.02                          # Seconds between GPIO polls

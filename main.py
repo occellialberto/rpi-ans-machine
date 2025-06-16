@@ -146,6 +146,7 @@ def main() -> None:
 
             # ----------------------------- IDLE ----------------------------- #
             if state == "IDLE" and rising_edge:
+                time.sleep(0.5)
                 log.info("Hang down detected (rising edge) → playing message.")
                 message_thread = _play_message(blocking=False)
                 state = "PLAY_MESSAGE"

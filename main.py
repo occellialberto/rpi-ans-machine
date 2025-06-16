@@ -29,7 +29,7 @@ log = logging.getLogger(__name__)
 # Configuration                                                              #
 # ---------------------------------------------------------------------------#
 PIN = 14                                   # GPIO pin to monitor (BCM scheme)
-MESSAGE_FILE = "message.wav"               # Audio message to be reproduced
+MESSAGE_FILE = "message_edited.wav"        # Audio message to be reproduced
 RECORD_DIR = Path("recordings")            # Directory where recordings land
 # Use PulseAudio’s recorder. “--format=cd --file-format=wav” is the closest
 # equivalent to the old “arecord -q -f cd -t wav”.

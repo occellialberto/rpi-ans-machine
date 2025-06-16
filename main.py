@@ -28,7 +28,7 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------#
 # Configuration                                                              #
 # ---------------------------------------------------------------------------#
-PIN = 14                                   # GPIO pin to monitor (BCM scheme)
+PIN = 17                                   # GPIO pin to monitor (BCM scheme)
 MESSAGE_FILE = "message_edited.wav"        # Audio message to be reproduced
 RECORD_DIR = Path("recordings")            # Directory where recordings land
 # Use PulseAudio’s recorder. “--format=cd --file-format=wav” is the closest
@@ -48,7 +48,7 @@ POLL_DELAY = 0.02                          # Seconds between GPIO polls
 ## @brief Prepare the GPIO subsystem.
 def setup_gpio() -> None:
     GPIO.setmode(GPIO.BCM)
-    GPIO.setup(PIN, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+    GPIO.setup(PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
     log.info("GPIO initialised (BCM pin %s).", PIN)
 
 ## @brief Read the monitored pin.
@@ -145,15 +145,15 @@ def main() -> None:
             rising_edge = last_level == 0 and level == 1
 
             # ----------------------------- IDLE ----------------------------- #
-            if state == "IDLE" and falling_edge:
-                log.info("Hang down detected (falling edge) → playing message.")
+            if state == "IDLE" and rising_edge:
+                log.info("Hang down detected (rising edge) → playing message.")
                 message_thread = _play_message(blocking=False)
                 state = "PLAY_MESSAGE"
 
             # ------------------------ PLAY_MESSAGE ------------------------- #
             elif state == "PLAY_MESSAGE":
                 # Abort if pin goes high before message ends
-                if rising_edge:
+                if falling_edge:
                     log.info("Hang up detected during playback → aborting.")
                     stop_audio()
                     state = "IDLE"
@@ -164,7 +164,7 @@ def main() -> None:
                     state = "RECORDING"
 
             # -------------------------- RECORDING -------------------------- #
-            elif state == "RECORDING" and rising_edge:
+            elif state == "RECORDING" and falling_edge:
                 log.info("Hang down detected.")
                 recorder.stop()
                 state = "IDLE"

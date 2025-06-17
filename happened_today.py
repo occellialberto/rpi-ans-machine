@@ -55,20 +55,23 @@ def read_gpio() -> int:
 #  @return thread
 def _play_random_event(blocking: bool = False) -> threading.Thread:
     event_files = list(EVENTS_DIR.glob("*.mp3")) + list(EVENTS_DIR.glob("*.wav"))
-    event_file = str(random.choice(event_files))
-    log.info("Starting event playback (%s, blocking=%s).", event_file, blocking)
-    if blocking:
-        play_audio(event_file, blocking=True)
-        log.info("Event playback finished (blocking path).")
-        return threading.current_thread()  # never queried
+    random.shuffle(event_files)
+    play_audio("today.mp3", blocking=True)
+    for event_file in event_files:
+        log.info("Starting event playback (%s, blocking=%s).", event_file, blocking)
+        if blocking:
+            play_audio(str(event_file), blocking=True)
+            log.info("Event playback finished (blocking path).")
+            return threading.current_thread()  # never queried
 
-    thread = threading.Thread(
-        target=play_audio,
-        args=(event_file,),
-        kwargs={"blocking": True},  # inside thread: blocking; outside: non-blocking
-        daemon=True,
-    )
-    thread.start()
+        thread = threading.Thread(
+            target=play_audio,
+            args=(str(event_file),),
+            kwargs={"blocking": True},  # inside thread: blocking; outside: non-blocking
+            daemon=True,
+        )
+        thread.start()
+        thread.join()
     return thread
 
 # ---------------------------------------------------------------------------#

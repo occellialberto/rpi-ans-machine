@@ -5,6 +5,7 @@ from gtts import gTTS
 import yaml
 import logging
 from pydub import AudioSegment
+from tqdm import tqdm
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -40,13 +41,16 @@ def generate_day_events():
                 else:
                     events_year[year] = [event]
         # Generate speeches
-        for y in events_year.keys():
+        for y in tqdm(events_year.keys(), desc="Generating audio", unit="audio"):
             speech = f"Nel {y} "
             for e in events_year[y]:
                 speech+=f"{e}. "
             logging.info(speech)
             tts = gTTS(text=speech, lang='it')
-            tts.save(f"events/{y}_{month}_{day}.wav")
+            tts.save(f"events/{y}_{month}_{day}.mp3")
+            sound = AudioSegment.from_mp3(f"events/{y}_{month}_{day}.mp3")
+            sound = sound.set_frame_rate(16000)
+            sound.export(f"events/{y}_{month}_{day}.wav", format="wav")
         with open("events/date.yaml", "w") as f:
             yaml.dump({'day': day, 'month': month}, f)
     except Exception as e:

@@ -54,7 +54,7 @@ def read_gpio() -> int:
 #  has been played, but the returned object is still a dummy Thread.
 #  @return thread
 def _play_random_event(blocking: bool = False) -> threading.Thread:
-    event_files = list(EVENTS_DIR.glob("*.mp3"))
+    event_files = list(EVENTS_DIR.glob("*.wav"))
     event_file = str(random.choice(event_files))
     log.info("Starting event playback (%s, blocking=%s).", event_file, blocking)
     if blocking:
@@ -80,7 +80,7 @@ def _play_random_event(blocking: bool = False) -> threading.Thread:
 #  • PLAY_MESSAGE: reproducing a random event file. If GPIO returns HIGH before
 #  playback completes → abort and return to IDLE.
 def main() -> None:
-    subprocess.run(["paplay", "o95.wav"])
+    subprocess.run(["aplay", "o95.wav"])
     setup_gpio()
     last_level = read_gpio()
     state = "IDLE"

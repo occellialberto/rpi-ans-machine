@@ -54,7 +54,7 @@ def read_gpio() -> int:
 #  has been played, but the returned object is still a dummy Thread.
 #  @return thread
 def _play_random_event(blocking: bool = False) -> threading.Thread:
-    event_files = list(EVENTS_DIR.glob("*.wav"))
+    event_files = list(EVENTS_DIR.glob("*.mp3"))
     event_file = str(random.choice(event_files))
     log.info("Starting event playback (%s, blocking=%s).", event_file, blocking)
     if blocking:

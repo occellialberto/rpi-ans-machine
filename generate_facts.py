@@ -46,9 +46,7 @@ def generate_day_events():
                 speech+=f"{e}. "
             logging.info(speech)
             tts = gTTS(text=speech, lang='it')
-            tts.save(f"events/{y}_{month}_{day}.mp3")
-            sound = AudioSegment.from_mp3(f"events/{y}_{month}_{day}.mp3")
-            sound.export(f"events/{y}_{month}_{day}.wav", format="wav")
+            tts.save(f"events/{y}_{month}_{day}.wav")
         with open("events/date.yaml", "w") as f:
             yaml.dump({'day': day, 'month': month}, f)
     except Exception as e:
@@ -63,7 +61,7 @@ except FileNotFoundError:
 
 if date_rec != {'day': datetime.datetime.now().day, 'month': datetime.datetime.now().strftime("%B").lower()}:
     logging.info("Missing recording of the day. Generating it...")
-    files = glob.glob('events/*.mp3')
+    files = glob.glob('events/*.wav')
     for f in files:
         os.remove(f)
     generate_day_events()

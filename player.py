@@ -1,7 +1,7 @@
 ## @file player.py
 ## @brief Simple-to-use audio playback helper tailored for the Raspberry Pi.
 ##
-## The implementation uses aplay for audio playback.
+## The implementation uses aplay for .wav audio playback and mpg123 for .mp3 audio playback.
 ##
 ## @section helpers Public Helpers
 ##
@@ -51,7 +51,7 @@ def _register_playback(backend: str, handle: Any) -> None:
 ## currently playing.
 def _is_handle_active(backend: str, handle: Any) -> bool:
     try:
-        if backend == "aplay":
+        if backend in ["aplay", "mpg123"]:
             return handle.poll() is None
     except Exception:
         return False
@@ -73,7 +73,7 @@ def stop_audio() -> bool:
                     _PLAYBACK_HANDLES.remove((backend, handle))
                     continue
 
-                if backend == "aplay":
+                if backend in ["aplay", "mpg123"]:
                     handle.terminate()
                     handle.wait(timeout=1)
                 else:
@@ -91,21 +91,30 @@ def stop_audio() -> bool:
                         pass
     return stopped_any
 
-## @brief This function is the back-end for aplay (ALSA, wav & raw files). It plays WAV/RAW files through ALSA with aplay. 
-## Suitable for very small systems where only .wav files are required.
+## @brief This function is the back-end for aplay (ALSA, wav files) and mpg123 (mp3 files). 
+## It plays WAV files through ALSA with aplay and MP3 files with mpg123. 
+## Suitable for systems where both .wav and .mp3 files are required.
 ## @param file_path The path of the file to play.
 ## @param blocking If True, the function will wait until the audio has finished playing.
 ## @returns True if the audio started playing, False otherwise.
-def _play_with_aplay(file_path: str, blocking: bool) -> bool:
-    if not shutil.which("aplay"):
+def _play_with_backend(file_path: str, blocking: bool) -> bool:
+    file_extension = os.path.splitext(file_path)[1]
+    if file_extension == ".wav":
+        backend = "aplay"
+    elif file_extension == ".mp3":
+        backend = "mpg123"
+    else:
         return False
 
-    cmd = ["aplay", file_path]  # -q = quiet
+    if not shutil.which(backend):
+        return False
+
+    cmd = [backend, file_path]  # -q = quiet
     try:
         proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL,
                                 stderr=subprocess.DEVNULL,
                                 start_new_session=True)
-        _register_playback("aplay", proc)
+        _register_playback(backend, proc)
         if blocking:
             proc.wait()
         return True
@@ -113,7 +122,8 @@ def _play_with_aplay(file_path: str, blocking: bool) -> bool:
         return False
 
 ## @brief This is the master helper function. It plays an audio file through the default Raspberry Pi audio output.
-## The function uses aplay for audio playback. It will raise FileNotFoundError if *path* does not exist, 
+## The function uses aplay for .wav audio playback and mpg123 for .mp3 audio playback. 
+## It will raise FileNotFoundError if *path* does not exist, 
 ## otherwise it returns True on success and False on failure.
 ## @param path The path of the file to play.
 ## @param blocking If True, the function will wait until the audio has finished playing.
@@ -123,7 +133,7 @@ def play_audio(path: str | os.PathLike, *, blocking: bool = True) -> bool:
     if not Path(file_path).is_file():
         raise FileNotFoundError(f"No such audio file: {file_path}")
 
-    return _play_with_aplay(file_path, blocking)
+    return _play_with_backend(file_path, blocking)
 
 ## @brief This class is a threaded convenience wrapper. It is a background thread that executes `play_audio`.  
 ## The boolean return value is stored in `self.success` once playback has finished.

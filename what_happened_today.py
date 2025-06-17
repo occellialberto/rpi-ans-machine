@@ -5,7 +5,7 @@ from gtts import gTTS
 import yaml
 import logging
 
-logging.basicConfig(filename='app.log', filemode='w', format='%(name)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def generate_day_events():
     wikipedia.set_lang("it")

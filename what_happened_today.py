@@ -1,8 +1,5 @@
 import datetime
 import wikipedia
-import openai
-
-openai.api_key = "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"
 
 def eventi_del_giorno():
     wikipedia.set_lang("it")

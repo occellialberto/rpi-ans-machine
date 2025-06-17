@@ -4,6 +4,7 @@ import os, glob
 from gtts import gTTS
 import yaml
 import logging
+from pydub import AudioSegment
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -46,6 +47,8 @@ def generate_day_events():
             logging.info(speech)
             tts = gTTS(text=speech, lang='it')
             tts.save(f"events/{y}_{month}_{day}.mp3")
+            sound = AudioSegment.from_mp3(f"events/{y}_{month}_{day}.mp3")
+            sound.export(f"events/{y}_{month}_{day}.wav", format="wav")
         with open("events/date.yaml", "w") as f:
             yaml.dump({'day': day, 'month': month}, f)
     except Exception as e:

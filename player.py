@@ -100,7 +100,7 @@ def _play_with_aplay(file_path: str, blocking: bool) -> bool:
     if not shutil.which("aplay"):
         return False
 
-    cmd = ["aplay", "-q", file_path]  # -q = quiet
+    cmd = ["aplay", file_path]  # -q = quiet
     try:
         proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL,
                                 stderr=subprocess.DEVNULL,

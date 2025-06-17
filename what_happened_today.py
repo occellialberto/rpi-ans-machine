@@ -1,7 +1,13 @@
 import datetime
 import wikipedia
+import os, glob
+from gtts import gTTS
+import yaml
+import logging
 
-def eventi_del_giorno():
+logging.basicConfig(filename='app.log', filemode='w', format='%(name)s - %(levelname)s - %(message)s')
+
+def generate_day_events():
     wikipedia.set_lang("it")
     today = datetime.datetime.now()
     day = today.day
@@ -11,8 +17,7 @@ def eventi_del_giorno():
         'may': 'maggio', 'june': 'giugno', 'july': 'luglio', 'august': 'agosto',
         'september': 'settembre', 'october': 'ottobre', 'november': 'novembre', 'december': 'dicembre'
     }
-    month = italian_months[month]
-    page_title = f"{day}_{month}"
+    page_title = f"{day}_{italian_months[month]}"
     
     try:
         content = wikipedia.page(page_title).content
@@ -21,75 +26,43 @@ def eventi_del_giorno():
         events = content[start_events + 12:end_events].strip()
         events = events.split("\n")
         year = 0
+        events_year = {}
         for e in events:
             try:
                 year = int(e[:4])
                 event = e[7:]
             except ValueError:
-                event.append(e)
-                print("(Same year as before)")
-            print(f"Nel {year}... {event}")
-            
-        '''      for e in events:
-            try:
-                year = int(e[:4])
-                if year not in year_events:
-                    year_events[year] = []
-            except ValueError:
-                year = p_year
-            if len(e) > 2:
-                year_events[year].append(e)
-            p_year = year
-        for year, events in year_events.items():
-            for e in events:
-                print(f"Nel {year}... {events}")
-                print(e)
-                response = openai.audio.speech.create(
-                    model="gpt-4o-mini-tts",  # or "tts-1-hd"
-                    voice="alloy",  # others: alloy, nova, echo, fable
-                    input=e
-                )
-                with open(f"events/{year}.mp3", "ab") as f:
-                    f.write(response.content)'''
-
-        '''        
-        start_births = content.find("== Nati ==")
-        end_births = content.find("== Morti ==")
-        births = content[start_births + 11:end_births].strip()
-        births = births.split("\n")
-        print(births)
-
-        start_deaths = content.find("== Morti ==")
-        end_deaths = content.find("== Celebrità ==")
-        deaths = content[start_deaths + 11:end_deaths].strip()
-        deaths = deaths.split("\n")
-        print(deaths)'''
-        #text = f"Eventi del {day} {month}: {events[:1500]}"  # max 4096 characters
-
-        #print("📅 Events of the day:")
-        #print(text)
-        '''
-        # 🔊 Generate audio with OpenAI TTS
-        response = openai.audio.speech.create(
-            model="tts-1",  # or "tts-1-hd"
-            voice="shimmer",  # others: alloy, nova, echo, fable
-            input=text
-        )
-
-        with open("events.mp3", "wb") as f:
-            f.write(response.content)
-
-        print("▶️ Playing the audio...")
-        import platform
-        import subprocess
-        if platform.system() == "Darwin":
-            subprocess.run(["afplay", "events.mp3"])
-        elif platform.system() == "Windows":
-            subprocess.run(["start", "events.mp3"], shell=True)
-        else:  # Linux
-            subprocess.run(["mpg123", "events.mp3"])'''
-
+                event = e
+            if len(e) > 5:
+                if year in events_year:
+                    events_year[year].append(event)
+                else:
+                    events_year[year] = [event]
+        # Generate speeches
+        for y in events_year.keys():
+            speech = f"Nel {y} "
+            for e in events_year[y]:
+                speech+=f"{e}. "
+            logging.info(speech)
+            tts = gTTS(text=speech, lang='it')
+            tts.save(f"events/{y}_{month}_{day}.mp3")
+        with open("events/date.yaml", "w") as f:
+            yaml.dump({'day': day, 'month': month}, f)
     except Exception as e:
-        print("❌ Error:", str(e))
+        logging.error("❌ Error:", str(e))
 
-eventi_del_giorno()
+date_rec = {'day': 1, 'month': 'january'}
+try:
+    with open("events/date.yaml", "r") as f:
+        date_rec = yaml.safe_load(f)
+except FileNotFoundError:
+    logging.warning("File not found, using default date")
+
+if date_rec != {'day': datetime.datetime.now().day, 'month': datetime.datetime.now().strftime("%B").lower()}:
+    logging.info("Missing recording of the day. Generating it...")
+    files = glob.glob('events/*.mp3')
+    for f in files:
+        os.remove(f)
+    generate_day_events()
+else:
+    logging.info("Recordings already taken")

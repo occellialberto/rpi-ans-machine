@@ -7,7 +7,7 @@ def keypad(callback=None):
 
     enable_pin = 11
     numpad_pin = 10
-    p_keypad_state = 0
+    p_keypad_state = 1
     p_enabled = 0
 
     PINS = [enable_pin, numpad_pin]
@@ -29,11 +29,14 @@ def keypad(callback=None):
                 p_keypad_state = keypad_state
             else:
                 if enabled != p_enabled:
-                    if number > 9:
-                        number = 0
-                    print(f"number: {number}")
-                    if callback:
-                        callback(number)
+                    if number == 0:
+                        print("No number pressed")
+                    else:
+                        if number > 9:
+                            number = 0
+                        print(f"number: {number}")
+                        if callback:
+                            callback(number)
             p_enabled = enabled
             time.sleep(0.01)
 

@@ -103,7 +103,8 @@ def main() -> None:
                 # Abort if pin goes high before message ends
                 if falling_edge:
                     log.info("Hang up detected during playback → aborting.")
-                    stop_audio()
+                    if message_thread and message_thread.is_alive():
+                        message_thread.join()
                     state = "IDLE"
 
             last_level = level

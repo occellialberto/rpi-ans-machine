@@ -1,7 +1,7 @@
 from keypad import keypad
 
 def on_number_composed(number):
-    if number == 011351789:
+    if number == "011351789":
         print("Hai chiamato casa")
         # Aggiungi qui il codice per accendere la luce
     elif number == 2:

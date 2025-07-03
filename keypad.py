@@ -47,7 +47,7 @@ def keypad(callback=None, multiple = True, full_number_timeout = 1):
                 if time.time()-p_time > full_number_timeout and len(full_number)>0:
                     print(f"Full number: {full_number}")
                     if callback:
-                       callback(int(full_number))
+                       callback(full_number)
                     full_number = ""
             time.sleep(0.01)
 

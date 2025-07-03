@@ -42,7 +42,7 @@ RECORD_CMD = [
     device,
     "--file-format=wav",
 ]
-POLL_DELAY = 0.02                          # Seconds between GPIO polls
+POLL_DELAY = 0.01                          # Seconds between GPIO polls
 # ---------------------------------------------------------------------------#
 
 ## @brief Prepare the GPIO subsystem.

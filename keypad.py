@@ -32,11 +32,11 @@ def keypad(callback=None, multiple = True, full_number_timeout = 1):
             else:
                 if enabled != p_enabled:
                     if number == 0:
-                        print("No number pressed")
+                        pass
                     else:
                         if number > 9:
                             number = 0
-                        print(f"number: {number}")
+                        print(f"{number}", end = " ")
                         if callback and not multiple:
                             callback(number)
                         if multiple:

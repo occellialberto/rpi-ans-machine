@@ -168,7 +168,7 @@ def play(path: str | os.PathLike, *, blocking: bool = True) -> _PlayThread:
 # Keep stop() convenience alias
 stop = stop_audio
 
-## @brief This is a manual test harness. It simply plays “message.wav” in the background and demonstrates stop after 2 s.
+## @brief This is a manual test harness. It simply plays “message_edited.wav” in the background and demonstrates stop after 2 s.
 if __name__ == "__main__":
     import time
 

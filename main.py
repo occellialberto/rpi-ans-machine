@@ -168,8 +168,6 @@ def main() -> None:
             elif state == "RECORDING" and falling_edge:
                 log.info("Hang down detected.")
                 recorder.stop()
-                log.info("Sync google drive")
-                subprocess.Popen("sleep 20 && rclone sync recordings/ gdrive:ans_machine_recordings", shell=True)
                 state = "IDLE"
 
             last_level = level

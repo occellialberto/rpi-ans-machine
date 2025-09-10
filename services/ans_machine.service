@@ -1,0 +1,13 @@
+[Unit]
+Description=Python-based answering machine
+After=default.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/milealbus/rpi-ans-machine
+ExecStart=/usr/bin/python3 /home/milealbus/rpi-ans-machine/main.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

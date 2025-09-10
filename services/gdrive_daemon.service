@@ -1,0 +1,13 @@
+[Unit]
+Description=Google Drive sync daemon
+After=default.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/milealbus/rpi-ans-machine
+ExecStart=/usr/bin/python3 /home/milealbus/rpi-ans-machine/gdrive_daemon.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

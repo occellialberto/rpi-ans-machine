@@ -36,7 +36,7 @@ def keypad(callback=None, multiple = True, full_number_timeout = 1):
                     else:
                         if number > 9:
                             number = 0
-                        print(f"{number}", end = " ")
+                        print(f"{number}", end = "", flush = True)
                         if callback and not multiple:
                             callback(number)
                         if multiple:
@@ -45,7 +45,7 @@ def keypad(callback=None, multiple = True, full_number_timeout = 1):
             p_enabled = enabled
             if multiple:
                 if time.time()-p_time > full_number_timeout and len(full_number)>0:
-                    print(f"Full number: {full_number}")
+                    print(f" -> Full number: {full_number}")
                     if callback:
                        callback(full_number)
                     full_number = ""

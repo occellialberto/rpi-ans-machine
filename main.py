@@ -33,24 +33,6 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------#
 PIN = 17                                   # GPIO pin to monitor (BCM scheme)
 MESSAGE_FILE = "messages/message_edited.wav"        # Audio message to be reproduced
-# Record these prompts/content as WAV files, or change the paths here.
-NAVIGATION_AUDIO = {
-    "MENU_SERVIZI": "messages/menu_servizi.wav",
-    "MENU_PRINCIPALE": "messages/menu_principale.wav",
-    "ASCOLTA_MESSAGGI": "messages/messaggi.wav",
-    "METEO": "messages/meteo.wav",
-    "CASA": "messages/casa.wav",
-    "NUMERO_NON_VALIDO": "messages/numero_non_valido.wav",
-}
-NAVIGATION_PROMPTS = {
-    "MENU_SERVIZI": "Per ascoltare i messaggi, digita 1; per il meteo, digita 2; "
-                    "per tornare al menu principale, digita 0.",
-    "MENU_PRINCIPALE": "Per accedere ai servizi, digita 10.",
-    "ASCOLTA_MESSAGGI": "Ascolto dei messaggi.",
-    "METEO": "Informazioni sul meteo.",
-    "CASA": "Hai chiamato casa.",
-    "NUMERO_NON_VALIDO": "Numero non valido per il menu corrente. Riprova.",
-}
 RECORD_DIR = Path("recordings/TSOD")            # Directory where recordings land
 # Use PulseAudio’s recorder. “--format=cd --file-format=wav” is the closest
 # equivalent to the old “arecord -q -f cd -t wav”.
@@ -180,10 +162,10 @@ def main() -> None:
         nonlocal state
         log.info("Number composed: %s", number)
         try:
-            action = on_number_composed(number, navigation)
-            log.info("%s", NAVIGATION_PROMPTS[action])
+            response = on_number_composed(number, navigation)
+            log.info("%s", response.prompt)
             stop_audio()
-            audio_file = NAVIGATION_AUDIO[action]
+            audio_file = response.audio_file
             if Path(audio_file).is_file():
                 play(audio_file, blocking=True)
             else:

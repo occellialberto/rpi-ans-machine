@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Optional
 
 from player import play_audio, stop_audio
+from keypad import keypad
 
 import RPi.GPIO as GPIO
 
@@ -29,8 +30,8 @@ log = logging.getLogger(__name__)
 # Configuration                                                              #
 # ---------------------------------------------------------------------------#
 PIN = 17                                   # GPIO pin to monitor (BCM scheme)
-MESSAGE_FILE = "message_edited.wav"        # Audio message to be reproduced
-RECORD_DIR = Path("recordings")            # Directory where recordings land
+MESSAGE_FILE = "messages/message_edited.wav"        # Audio message to be reproduced
+RECORD_DIR = Path("recordings/TSOD")            # Directory where recordings land
 # Use PulseAudio’s recorder. “--format=cd --file-format=wav” is the closest
 # equivalent to the old “arecord -q -f cd -t wav”.
 device = "--device=alsa_input.usb-C-Media_Electronics_Inc._USB_Audio_Device-00.mono-fallback"

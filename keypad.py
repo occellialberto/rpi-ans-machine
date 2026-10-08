@@ -1,7 +1,7 @@
 import RPi.GPIO as GPIO
 import time
 
-def keypad(callback=None, multiple = True, full_number_timeout = 1):
+def keypad(callback_number=None, callback_rotation=None, multiple = True, full_number_timeout = 1):
     # Usa la numerazione BCM (i numeri GPIO, non i pin fisici)
     GPIO.setmode(GPIO.BCM)
 
@@ -24,6 +24,8 @@ def keypad(callback=None, multiple = True, full_number_timeout = 1):
             if enabled == 1:
                 p_time = time.time()
                 if enabled != p_enabled:
+                    if callback_rotation:
+                        callback_rotation()
                     number = 0
                 keypad_state = GPIO.input(numpad_pin)
                 if keypad_state != p_keypad_state and keypad_state == 1:
@@ -37,8 +39,8 @@ def keypad(callback=None, multiple = True, full_number_timeout = 1):
                         if number > 9:
                             number = 0
                         print(f"{number}", end = "", flush = True)
-                        if callback and not multiple:
-                            callback(number)
+                        if callback_number and not multiple:
+                            callback_number(number)
                         if multiple:
                             full_number += str(number)
                             #print(full_number)
@@ -46,8 +48,8 @@ def keypad(callback=None, multiple = True, full_number_timeout = 1):
             if multiple:
                 if time.time()-p_time > full_number_timeout and len(full_number)>0:
                     print(f" -> Full number: {full_number}")
-                    if callback:
-                       callback(full_number)
+                    if callback_number:
+                       callback_number(full_number)
                     full_number = ""
             time.sleep(0.01)
 

@@ -10,10 +10,12 @@ import subprocess
 import threading
 from datetime import datetime
 from pathlib import Path
+from queue import Empty, Queue
 from typing import Optional
 
 from player import play_audio, stop_audio
 from keypad import keypad
+from handler import on_number_composed
 
 import RPi.GPIO as GPIO
 
@@ -123,12 +125,12 @@ class Recorder:
 # ---------------------------------------------------------------------------#
 
 ## @brief Implements the following state machine:
-#  • IDLE: waiting for GPIO to go from HIGH (1) to LOW (0).
-#  • PLAY_MESSAGE: reproducing MESSAGE_FILE. If GPIO returns HIGH before
-#  playback completes → abort and return to IDLE.
-#  When playback finishes while GPIO is still LOW → start recording.
-#  • RECORDING: capturing audio whilst GPIO stays LOW.
-#  When GPIO returns HIGH → stop recording and return to IDLE.
+#  • IDLE: waiting for the handset to be lifted (LOW → HIGH).
+#  • PLAY_MESSAGE: play the greeting; the first dial rotation calls
+#    callback_rotation and enters DIALING. Without dialing, record as before.
+#  • DIALING: wait for the complete number, run callback_number, then return
+#    to IDLE. Hanging up (HIGH → LOW) cancels playback/dialing/recording.
+#  • RECORDING: record until the handset is hung up.
 def main() -> None:
     subprocess.run(["paplay", "o95.wav"])
     setup_gpio()
@@ -137,6 +139,33 @@ def main() -> None:
 
     message_thread: Optional[threading.Thread] = None
     recorder = Recorder()
+    keypad_events = Queue()
+    keypad_stop = threading.Event()
+    keypad_thread: Optional[threading.Thread] = None
+
+    def stop_keypad() -> None:
+        nonlocal keypad_thread
+        keypad_stop.set()
+        if keypad_thread is not None:
+            keypad_thread.join()
+            keypad_thread = None
+
+    def callback_rotation() -> None:
+        nonlocal state
+        log.info("Dial rotation detected → waiting for number.")
+        state = "DIALING"
+        stop_audio()
+
+    def callback_number(number: str) -> None:
+        nonlocal state
+        log.info("Number composed: %s", number)
+        try:
+            on_number_composed(number)
+        except Exception:
+            log.exception("Error handling number %s", number)
+        finally:
+            stop_keypad()
+            state = "IDLE"
 
     try:
         while True:
@@ -148,20 +177,45 @@ def main() -> None:
             # ----------------------------- IDLE ----------------------------- #
             if state == "IDLE" and rising_edge:
                 time.sleep(0.5)
-                log.info("Hang down detected (rising edge) → playing message.")
+                log.info("Handset lifted (rising edge) → playing message.")
+                keypad_events = Queue()
+                keypad_stop.clear()
+                keypad_thread = threading.Thread(
+                    target=keypad,
+                    kwargs={
+                        "callback_rotation": lambda: keypad_events.put(("rotation", None)),
+                        "callback_number": lambda number: keypad_events.put(("number", number)),
+                        "multiple": True,
+                        "stop_event": keypad_stop,
+                    },
+                    daemon=True,
+                )
+                keypad_thread.start()
                 message_thread = _play_message(blocking=False)
                 state = "PLAY_MESSAGE"
 
+            # Callbacks run here, so only the main thread changes state.
+            if state in ("PLAY_MESSAGE", "DIALING") and falling_edge:
+                log.info("Handset hung up → aborting.")
+                stop_audio()
+                stop_keypad()
+                state = "IDLE"
+
+            while True:
+                try:
+                    event, number = keypad_events.get_nowait()
+                except Empty:
+                    break
+                if event == "rotation" and state == "PLAY_MESSAGE":
+                    callback_rotation()
+                elif event == "number" and state == "DIALING":
+                    callback_number(number)
+
             # ------------------------ PLAY_MESSAGE ------------------------- #
-            elif state == "PLAY_MESSAGE":
-                # Abort if pin goes high before message ends
-                if falling_edge:
-                    log.info("Hang up detected during playback → aborting.")
-                    stop_audio()
-                    state = "IDLE"
-                # Start recording once playback finishes
-                elif message_thread and not message_thread.is_alive():
+            if state == "PLAY_MESSAGE":
+                if message_thread and not message_thread.is_alive():
                     log.info("Message playback finished → starting recording.")
+                    stop_keypad()
                     recorder.start()
                     state = "RECORDING"
 
@@ -178,6 +232,7 @@ def main() -> None:
         log.info("Keyboard interrupt received – exiting.")
 
     finally:
+        stop_keypad()
         stop_audio()
         recorder.stop()
         GPIO.cleanup()

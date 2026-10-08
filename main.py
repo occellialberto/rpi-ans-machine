@@ -13,9 +13,9 @@ from pathlib import Path
 from queue import Empty, Queue
 from typing import Optional
 
-from player import play_audio, stop_audio
+from player import play, play_audio, stop_audio
 from keypad import keypad
-from handler import on_number_composed
+from handler import Navigation, on_number_composed
 
 import RPi.GPIO as GPIO
 
@@ -33,6 +33,24 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------#
 PIN = 17                                   # GPIO pin to monitor (BCM scheme)
 MESSAGE_FILE = "messages/message_edited.wav"        # Audio message to be reproduced
+# Record these prompts/content as WAV files, or change the paths here.
+NAVIGATION_AUDIO = {
+    "MENU_SERVIZI": "messages/menu_servizi.wav",
+    "MENU_PRINCIPALE": "messages/menu_principale.wav",
+    "ASCOLTA_MESSAGGI": "messages/messaggi.wav",
+    "METEO": "messages/meteo.wav",
+    "CASA": "messages/casa.wav",
+    "NUMERO_NON_VALIDO": "messages/numero_non_valido.wav",
+}
+NAVIGATION_PROMPTS = {
+    "MENU_SERVIZI": "Per ascoltare i messaggi, digita 1; per il meteo, digita 2; "
+                    "per tornare al menu principale, digita 0.",
+    "MENU_PRINCIPALE": "Per accedere ai servizi, digita 10.",
+    "ASCOLTA_MESSAGGI": "Ascolto dei messaggi.",
+    "METEO": "Informazioni sul meteo.",
+    "CASA": "Hai chiamato casa.",
+    "NUMERO_NON_VALIDO": "Numero non valido per il menu corrente. Riprova.",
+}
 RECORD_DIR = Path("recordings/TSOD")            # Directory where recordings land
 # Use PulseAudio’s recorder. “--format=cd --file-format=wav” is the closest
 # equivalent to the old “arecord -q -f cd -t wav”.
@@ -128,8 +146,9 @@ class Recorder:
 #  • IDLE: waiting for the handset to be lifted (LOW → HIGH).
 #  • PLAY_MESSAGE: play the greeting; the first dial rotation calls
 #    callback_rotation and enters DIALING. Without dialing, record as before.
-#  • DIALING: wait for the complete number, run callback_number, then return
-#    to IDLE. Hanging up (HIGH → LOW) cancels playback/dialing/recording.
+#  • DIALING: wait for the complete number, then run callback_number.
+#  • NAVIGATION: play the selected audio and wait for another choice.
+#    Hanging up (HIGH → LOW) resets the menu and returns to IDLE.
 #  • RECORDING: record until the handset is hung up.
 def main() -> None:
     subprocess.run(["paplay", "o95.wav"])
@@ -139,6 +158,7 @@ def main() -> None:
 
     message_thread: Optional[threading.Thread] = None
     recorder = Recorder()
+    navigation = Navigation()
     keypad_events = Queue()
     keypad_stop = threading.Event()
     keypad_thread: Optional[threading.Thread] = None
@@ -160,12 +180,18 @@ def main() -> None:
         nonlocal state
         log.info("Number composed: %s", number)
         try:
-            on_number_composed(number)
+            action = on_number_composed(number, navigation)
+            log.info("%s", NAVIGATION_PROMPTS[action])
+            stop_audio()
+            audio_file = NAVIGATION_AUDIO[action]
+            if Path(audio_file).is_file():
+                play(audio_file, blocking=True)
+            else:
+                log.warning("Navigation audio missing: %s", audio_file)
         except Exception:
             log.exception("Error handling number %s", number)
         finally:
-            stop_keypad()
-            state = "IDLE"
+            state = "NAVIGATION"
 
     try:
         while True:
@@ -178,6 +204,7 @@ def main() -> None:
             if state == "IDLE" and rising_edge:
                 time.sleep(0.5)
                 log.info("Handset lifted (rising edge) → playing message.")
+                navigation.reset()
                 keypad_events = Queue()
                 keypad_stop.clear()
                 keypad_thread = threading.Thread(
@@ -195,10 +222,11 @@ def main() -> None:
                 state = "PLAY_MESSAGE"
 
             # Callbacks run here, so only the main thread changes state.
-            if state in ("PLAY_MESSAGE", "DIALING") and falling_edge:
+            if state in ("PLAY_MESSAGE", "DIALING", "NAVIGATION") and falling_edge:
                 log.info("Handset hung up → aborting.")
                 stop_audio()
                 stop_keypad()
+                navigation.reset()
                 state = "IDLE"
 
             while True:
@@ -206,7 +234,7 @@ def main() -> None:
                     event, number = keypad_events.get_nowait()
                 except Empty:
                     break
-                if event == "rotation" and state == "PLAY_MESSAGE":
+                if event == "rotation" and state in ("PLAY_MESSAGE", "DIALING", "NAVIGATION"):
                     callback_rotation()
                 elif event == "number" and state == "DIALING":
                     callback_number(number)
@@ -223,6 +251,7 @@ def main() -> None:
             elif state == "RECORDING" and falling_edge:
                 log.info("Hang down detected.")
                 recorder.stop()
+                navigation.reset()
                 state = "IDLE"
 
             last_level = level

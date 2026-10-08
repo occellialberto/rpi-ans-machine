@@ -4,5 +4,4 @@
 *.pyd
 *.pyw
 *.pyz
-
-*.wav
+.DS_Store
